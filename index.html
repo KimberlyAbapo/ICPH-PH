@@ -13,28 +13,37 @@
         header h1 { font-family: 'Orbitron'; font-size: 3rem; margin: 0; letter-spacing: 5px; }
         .main-container { display: grid; grid-template-columns: 1fr 350px; max-width: 1400px; margin: -50px auto 50px; gap: 20px; padding: 0 20px; }
         .card { background: var(--dark-gray); border-radius: 12px; border: 1px solid #333; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .btn { background: var(--honda-red); color: white; border: none; padding: 12px 25px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; text-transform: uppercase; font-family: 'Orbitron'; }
+        .btn { background: var(--honda-red); color: white; border: none; padding: 12px 25px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; text-transform: uppercase; font-family: 'Orbitron'; margin-top: 10px; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
         .garage-feed { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; margin-top: 20px; }
-        .feed-item { background: #252525; border-radius: 8px; overflow: hidden; border-top: 3px solid var(--honda-red); }
+        .feed-item { background: #252525; border-radius: 8px; overflow: hidden; border-top: 3px solid var(--honda-red); position: relative; }
         .feed-item img { width: 100%; height: 180px; object-fit: cover; }
         .shoutbox { height: 500px; display: flex; flex-direction: column; position: sticky; top: 20px; }
         #chat-messages { flex-grow: 1; overflow-y: auto; padding: 10px; font-size: 0.85rem; }
         .msg { margin-bottom: 8px; background: #2a2a2a; padding: 8px; border-radius: 8px; border-left: 3px solid var(--honda-red); }
-        input { width: 100%; padding: 10px; background: #111; border: 1px solid #444; color: white; border-radius: 6px; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 10px; background: #111; border: 1px solid #444; color: white; border-radius: 6px; margin-bottom: 5px; }
+        .upload-area { border: 2px dashed #444; padding: 15px; text-align: center; border-radius: 6px; margin-bottom: 10px; cursor: pointer; }
+        .upload-area:hover { border-color: var(--honda-red); }
         @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-    <header><h1>ICPH COMMUNITY</h1><p>SUPABASE POWERED</p></header>
+    <header><h1>ICPH COMMUNITY</h1><p>OFFICIAL GARAGE HUB</p></header>
     <div class="main-container">
         <div class="card">
             <h3 style="margin-top:0">GARAGE FEED</h3>
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <input type="text" id="rider-name" placeholder="Rider Name">
-                <input type="text" id="ride-title" placeholder="Specs (e.g. Click 160)">
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="rider-name" placeholder="Rider Name / Alias">
+                <input type="text" id="ride-title" placeholder="Ride Specs (e.g. Vario 160)">
             </div>
-            <input type="text" id="ride-img" placeholder="Photo URL (https://...)" style="margin-bottom:10px;">
-            <button class="btn" onclick="postToGarage()">Post to Garage</button>
+            
+            <div class="upload-area" onclick="document.getElementById('ride-file').click()">
+                <p style="margin:0; font-size:0.9rem; color:#aaa;">Click to Upload Ride Photo</p>
+                <input type="file" id="ride-file" accept="image/*" style="display:none" onchange="previewFile()">
+            </div>
+            <img id="preview-img" style="width:100%; height:200px; object-fit:cover; display:none; border-radius:6px; margin-bottom:10px;">
+            
+            <button id="post-btn" class="btn" onclick="uploadAndPost()">POST RIDE</button>
             <div id="garage-feed" class="garage-feed"></div>
         </div>
         <div class="card shoutbox">
@@ -48,33 +57,74 @@
     <script>
         const SUPABASE_URL = 'https://xyztqvcehfqlkzoeivff.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enRxdmNlaGZxbGt6b2VpdmZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0Mzg3MzQsImV4cCI6MjA4ODAxNDczNH0.8NuWVb0ngl769Cohfdeyjc0ZUIBw9sSmavlmuR501zA';
-        
-        // Use a different name for the client to avoid global conflicts
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        async function postToGarage() {
-            const n=document.getElementById('rider-name').value, t=document.getElementById('ride-title').value, i=document.getElementById('ride-img').value;
-            if(!n||!t||!i) return alert("Please fill all fields!");
-            const { error } = await sb.from('garage').insert([{ name: n, title: t, img: i }]);
-            if (error) alert("Error: " + error.message);
-            else { document.getElementById('ride-title').value=''; document.getElementById('ride-img').value=''; }
+        function previewFile() {
+            const file = document.getElementById('ride-file').files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('preview-img').src = e.target.result;
+                    document.getElementById('preview-img').style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function uploadAndPost() {
+            const name = document.getElementById('rider-name').value;
+            const title = document.getElementById('ride-title').value;
+            const fileInput = document.getElementById('ride-file');
+            const file = fileInput.files[0];
+
+            if (!name || !title || !file) return alert("Please fill name, title, and select a photo!");
+
+            document.getElementById('post-btn').disabled = true;
+            document.getElementById('post-btn').innerText = "UPLOADING...";
+
+            // 1. Upload Image
+            const fileName = `rides/${Date.now()}_${file.name.replace(/\s/g, '_')}`;
+            const { data, error: uploadError } = await sb.storage.from('rides').upload(fileName, file);
+
+            if (uploadError) {
+                alert("Upload Failed: " + uploadError.message);
+                document.getElementById('post-btn').disabled = false;
+                document.getElementById('post-btn').innerText = "POST RIDE";
+                return;
+            }
+
+            // 2. Get Public URL
+            const { data: { publicUrl } } = sb.storage.from('rides').getPublicUrl(fileName);
+
+            // 3. Save to Database
+            const { error: dbError } = await sb.from('garage').insert([{ name: name, title: title, img: publicUrl }]);
+
+            if (dbError) {
+                alert("Database Error: " + dbError.message);
+            } else {
+                // Reset Form
+                document.getElementById('ride-title').value = '';
+                document.getElementById('preview-img').style.display = 'none';
+                fileInput.value = '';
+            }
+            document.getElementById('post-btn').disabled = false;
+            document.getElementById('post-btn').innerText = "POST RIDE";
         }
 
         async function sendChat() {
             const n=document.getElementById('rider-name').value||'Rider', m=document.getElementById('chat-msg').value;
             if(!m) return;
-            const { error } = await sb.from('chat').insert([{ user: n, text: m }]);
-            if (error) console.error(error);
+            await sb.from('chat').insert([{ user: n, text: m }]);
             document.getElementById('chat-msg').value='';
         }
 
-        // Subscribe to changes
-        sb.channel('any').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage' }, payload => renderPost(payload.new)).subscribe();
-        sb.channel('any2').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat' }, payload => renderChat(payload.new)).subscribe();
+        // Realtime Listeners
+        sb.channel('public:garage').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage' }, payload => renderPost(payload.new)).subscribe();
+        sb.channel('public:chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat' }, payload => renderChat(payload.new)).subscribe();
 
         function renderPost(data) {
             const div = document.createElement('div'); div.className = 'feed-item';
-            div.innerHTML = `<img src="${data.img}" onerror="this.src='https://via.placeholder.com/400x200?text=ICPH+Ride'"><div style="padding:10px"><b style="color:red">@${data.name}</b><p style="margin:5px 0; font-size:0.9rem">${data.title}</p></div>`;
+            div.innerHTML = `<img src="${data.img}"><div style="padding:10px"><b style="color:red">@${data.name}</b><p style="margin:5px 0; font-size:0.9rem">${data.title}</p></div>`;
             document.getElementById('garage-feed').prepend(div);
         }
 
