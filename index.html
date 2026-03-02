@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICPH | Official Community Hub (Supabase Powered)</title>
-    <!-- Supabase JS Library -->
+    <title>ICPH | Official Community Hub</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap');
@@ -21,54 +20,57 @@
         .shoutbox { height: 500px; display: flex; flex-direction: column; position: sticky; top: 20px; }
         #chat-messages { flex-grow: 1; overflow-y: auto; padding: 10px; font-size: 0.85rem; }
         .msg { margin-bottom: 8px; background: #2a2a2a; padding: 8px; border-radius: 8px; border-left: 3px solid var(--honda-red); }
+        input { width: 100%; padding: 10px; background: #111; border: 1px solid #444; color: white; border-radius: 6px; }
         @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-    <header><h1>ICPH COMMUNITY</h1><p>SUPABASE REALTIME HUB</p></header>
+    <header><h1>ICPH COMMUNITY</h1><p>SUPABASE POWERED</p></header>
     <div class="main-container">
         <div class="card">
             <h3 style="margin-top:0">GARAGE FEED</h3>
-            <input type="text" id="rider-name" placeholder="Rider Name" style="width:49%; padding:10px; background:#111; border:1px solid #444; color:white;">
-            <input type="text" id="ride-title" placeholder="Ride Specs (e.g. Click 125 V2)" style="width:49%; padding:10px; background:#111; border:1px solid #444; color:white;">
-            <input type="text" id="ride-img" placeholder="Photo URL (https://...)" style="width:100%; padding:10px; background:#111; border:1px solid #444; color:white; margin:10px 0;">
-            <button class="btn" onclick="postToGarage()">Post Ride</button>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <input type="text" id="rider-name" placeholder="Rider Name">
+                <input type="text" id="ride-title" placeholder="Specs (e.g. Click 160)">
+            </div>
+            <input type="text" id="ride-img" placeholder="Photo URL (https://...)" style="margin-bottom:10px;">
+            <button class="btn" onclick="postToGarage()">Post to Garage</button>
             <div id="garage-feed" class="garage-feed"></div>
         </div>
         <div class="card shoutbox">
             <h3 style="margin-top:0">SHOUTBOX</h3>
             <div id="chat-messages"></div>
-            <input type="text" id="chat-msg" placeholder="Type message..." style="width:100%; padding:10px; background:#111; border:1px solid #444; color:white;" onkeypress="if(event.key==='Enter') sendChat()">
+            <div style="margin-top:10px;">
+                <input type="text" id="chat-msg" placeholder="Type message..." onkeypress="if(event.key==='Enter') sendChat()">
+            </div>
         </div>
     </div>
     <script>
         const SUPABASE_URL = 'https://xyztqvcehfqlkzoeivff.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enRxdmNlaGZxbGt6b2VpdmZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0Mzg3MzQsImV4cCI6MjA4ODAxNDczNH0.8NuWVb0ngl769Cohfdeyjc0ZUIBw9sSmavlmuR501zA';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // Use a different name for the client to avoid global conflicts
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         async function postToGarage() {
             const n=document.getElementById('rider-name').value, t=document.getElementById('ride-title').value, i=document.getElementById('ride-img').value;
             if(!n||!t||!i) return alert("Please fill all fields!");
-            const { error } = await supabase.from('garage').insert([{ name: n, title: t, img: i }]);
-            if (error) alert("Error: " + error.message + "\nMake sure you created the 'garage' table!");
+            const { error } = await sb.from('garage').insert([{ name: n, title: t, img: i }]);
+            if (error) alert("Error: " + error.message);
+            else { document.getElementById('ride-title').value=''; document.getElementById('ride-img').value=''; }
         }
 
         async function sendChat() {
             const n=document.getElementById('rider-name').value||'Rider', m=document.getElementById('chat-msg').value;
             if(!m) return;
-            const { error } = await supabase.from('chat').insert([{ user: n, text: m }]);
+            const { error } = await sb.from('chat').insert([{ user: n, text: m }]);
             if (error) console.error(error);
             document.getElementById('chat-msg').value='';
         }
 
-        // Realtime Subscription
-        supabase.channel('public:garage').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage' }, payload => {
-            renderPost(payload.new);
-        }).subscribe();
-
-        supabase.channel('public:chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat' }, payload => {
-            renderChat(payload.new);
-        }).subscribe();
+        // Subscribe to changes
+        sb.channel('any').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage' }, payload => renderPost(payload.new)).subscribe();
+        sb.channel('any2').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat' }, payload => renderChat(payload.new)).subscribe();
 
         function renderPost(data) {
             const div = document.createElement('div'); div.className = 'feed-item';
@@ -81,14 +83,13 @@
             const box = document.getElementById('chat-messages'); box.appendChild(d); box.scrollTop = box.scrollHeight;
         }
 
-        // Initial Load
-        async function loadData() {
-            const { data: posts } = await supabase.from('garage').select('*').order('created_at', { ascending: false });
-            if(posts) posts.forEach(renderPost);
-            const { data: chats } = await supabase.from('chat').select('*').order('created_at', { ascending: true }).limit(50);
-            if(chats) chats.forEach(renderChat);
+        async function loadInitial() {
+            const { data: g } = await sb.from('garage').select('*').order('created_at', { ascending: false }).limit(20);
+            if(g) g.forEach(renderPost);
+            const { data: c } = await sb.from('chat').select('*').order('created_at', { ascending: true }).limit(50);
+            if(c) c.forEach(renderChat);
         }
-        loadData();
+        loadInitial();
     </script>
 </body>
 </html>
