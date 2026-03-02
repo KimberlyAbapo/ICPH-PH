@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICPH | Independent Click Philippines - Realtime Hub</title>
-    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <title>ICPH | Official Community Hub (Supabase Powered)</title>
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap');
         :root { --honda-red: #E30613; --carbon: #121212; --dark-gray: #1E1E1E; --white: #FFFFFF; }
@@ -24,13 +25,13 @@
     </style>
 </head>
 <body>
-    <header><h1>ICPH COMMUNITY</h1><p>INDEPENDENT CLICK PHILIPPINES</p></header>
+    <header><h1>ICPH COMMUNITY</h1><p>SUPABASE REALTIME HUB</p></header>
     <div class="main-container">
         <div class="card">
             <h3 style="margin-top:0">GARAGE FEED</h3>
             <input type="text" id="rider-name" placeholder="Rider Name" style="width:49%; padding:10px; background:#111; border:1px solid #444; color:white;">
-            <input type="text" id="ride-title" placeholder="Ride Specs" style="width:49%; padding:10px; background:#111; border:1px solid #444; color:white;">
-            <input type="text" id="ride-img" placeholder="Photo URL" style="width:100%; padding:10px; background:#111; border:1px solid #444; color:white; margin:10px 0;">
+            <input type="text" id="ride-title" placeholder="Ride Specs (e.g. Click 125 V2)" style="width:49%; padding:10px; background:#111; border:1px solid #444; color:white;">
+            <input type="text" id="ride-img" placeholder="Photo URL (https://...)" style="width:100%; padding:10px; background:#111; border:1px solid #444; color:white; margin:10px 0;">
             <button class="btn" onclick="postToGarage()">Post Ride</button>
             <div id="garage-feed" class="garage-feed"></div>
         </div>
@@ -41,31 +42,53 @@
         </div>
     </div>
     <script>
-        const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
-        const garage = gun.get('icph_community_v3_garage');
-        const chat = gun.get('icph_community_v3_chat');
-        function postToGarage() {
+        const SUPABASE_URL = 'https://xyztqvcehfqlkzoeivff.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enRxdmNlaGZxbGt6b2VpdmZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0Mzg3MzQsImV4cCI6MjA4ODAxNDczNH0.8NuWVb0ngl769Cohfdeyjc0ZUIBw9sSmavlmuR501zA';
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function postToGarage() {
             const n=document.getElementById('rider-name').value, t=document.getElementById('ride-title').value, i=document.getElementById('ride-img').value;
-            if(!n||!t||!i) return alert("Fill all fields!");
-            garage.set({name:n, title:t, img:i, time:Date.now()});
+            if(!n||!t||!i) return alert("Please fill all fields!");
+            const { error } = await supabase.from('garage').insert([{ name: n, title: t, img: i }]);
+            if (error) alert("Error: " + error.message + "\nMake sure you created the 'garage' table!");
         }
-        function sendChat() {
+
+        async function sendChat() {
             const n=document.getElementById('rider-name').value||'Rider', m=document.getElementById('chat-msg').value;
             if(!m) return;
-            chat.set({user:n, text:m, time:Date.now()});
+            const { error } = await supabase.from('chat').insert([{ user: n, text: m }]);
+            if (error) console.error(error);
             document.getElementById('chat-msg').value='';
         }
-        garage.map().on((data, id) => {
-            if(!data||!data.title||document.getElementById(id)) return;
-            const div = document.createElement('div'); div.id = id; div.className = 'feed-item';
+
+        // Realtime Subscription
+        supabase.channel('public:garage').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage' }, payload => {
+            renderPost(payload.new);
+        }).subscribe();
+
+        supabase.channel('public:chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat' }, payload => {
+            renderChat(payload.new);
+        }).subscribe();
+
+        function renderPost(data) {
+            const div = document.createElement('div'); div.className = 'feed-item';
             div.innerHTML = `<img src="${data.img}" onerror="this.src='https://via.placeholder.com/400x200?text=ICPH+Ride'"><div style="padding:10px"><b style="color:red">@${data.name}</b><p style="margin:5px 0; font-size:0.9rem">${data.title}</p></div>`;
             document.getElementById('garage-feed').prepend(div);
-        });
-        chat.map().once((data) => {
-            if(!data||!data.text) return;
+        }
+
+        function renderChat(data) {
             const d = document.createElement('div'); d.className='msg'; d.innerHTML=`<b style="color:red; font-size:0.7rem">${data.user}</b>${data.text}`;
             const box = document.getElementById('chat-messages'); box.appendChild(d); box.scrollTop = box.scrollHeight;
-        });
+        }
+
+        // Initial Load
+        async function loadData() {
+            const { data: posts } = await supabase.from('garage').select('*').order('created_at', { ascending: false });
+            if(posts) posts.forEach(renderPost);
+            const { data: chats } = await supabase.from('chat').select('*').order('created_at', { ascending: true }).limit(50);
+            if(chats) chats.forEach(renderChat);
+        }
+        loadData();
     </script>
 </body>
 </html>
